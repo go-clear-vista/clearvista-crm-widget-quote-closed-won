@@ -262,15 +262,32 @@
         // Initialize widget
         let quoteId = null;
         let quoteData = null;
+        let initAttempts = 0;
+        const MAX_INIT_ATTEMPTS = 5;
 
         // Get quote context from Zoho CRM Widget API
         async function initializeWidget() {
             try {
+                initAttempts++;
+                console.log(`Initialization attempt ${initAttempts}/${MAX_INIT_ATTEMPTS}`);
+                console.log('ZOHO available:', typeof ZOHO !== 'undefined');
+                console.log('ZOHO.CRM available:', typeof ZOHO !== 'undefined' && ZOHO.CRM !== undefined);
+                console.log('ZOHO.CRM.UI available:', typeof ZOHO !== 'undefined' && ZOHO.CRM && ZOHO.CRM.UI !== undefined);
+
                 // Wait for Zoho CRM widget SDK to load
                 if (typeof ZOHO !== 'undefined' && ZOHO.CRM && ZOHO.CRM.UI) {
+                    console.log('Zoho CRM Widget SDK detected. Fetching record context...');
+
                     // Get the current record context
                     const context = await ZOHO.CRM.UI.Util.getRecordContext();
+                    console.log('Record context:', context);
+
+                    if (!context || !context.record || !context.record[0]) {
+                        throw new Error('Invalid record context: ' + JSON.stringify(context));
+                    }
+
                     quoteId = context.record[0];
+                    console.log('Quote ID:', quoteId);
 
                     // Get quote data
                     const response = await ZOHO.CRM.API.getRecord({
@@ -278,25 +295,44 @@
                         RecordID: quoteId
                     });
 
+                    console.log('API Response:', response);
+
+                    if (!response || !response.data || !response.data[0]) {
+                        throw new Error('Invalid API response: ' + JSON.stringify(response));
+                    }
+
                     quoteData = response.data[0];
+                    console.log('Quote Data:', quoteData);
                     displayQuoteInfo();
                     showAppropriateMessage();
                 } else {
-                    // Fallback for testing without Zoho context
-                    console.log('Zoho CRM Widget SDK not available. Testing mode.');
-                    quoteId = 'TEST-12345';
-                    quoteData = {
-                        id: 'TEST-12345',
-                        Quote_Number: 'SQ-100587',
-                        Subject: 'Test Quote',
-                        Quote_Stage: 'Draft'
-                    };
-                    displayQuoteInfo();
-                    showAppropriateMessage();
+                    // Retry if SDK not yet loaded
+                    if (initAttempts < MAX_INIT_ATTEMPTS) {
+                        console.log('Zoho CRM Widget SDK not yet available. Retrying in 500ms...');
+                        setTimeout(initializeWidget, 500);
+                    } else {
+                        // Fallback for testing without Zoho context
+                        console.log('Zoho CRM Widget SDK not available after retries. Using test mode.');
+                        quoteId = 'TEST-12345';
+                        quoteData = {
+                            id: 'TEST-12345',
+                            Quote_Number: 'SQ-100587',
+                            Subject: 'Test Quote',
+                            Quote_Stage: 'Draft'
+                        };
+                        displayQuoteInfo();
+                        showAppropriateMessage();
+                        showError('Running in test mode - widget not loaded in Zoho CRM context. Quote data is sample data only.');
+                    }
                 }
             } catch (error) {
                 console.error('Error initializing widget:', error);
-                showError('Failed to load quote information. Please try again.');
+                if (initAttempts < MAX_INIT_ATTEMPTS) {
+                    console.log('Error caught, retrying in 500ms...');
+                    setTimeout(initializeWidget, 500);
+                } else {
+                    showError('Failed to load quote information. Error: ' + error.message);
+                }
             }
         }
 
