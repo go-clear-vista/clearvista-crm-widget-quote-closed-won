@@ -265,13 +265,77 @@
         let initAttempts = 0;
         const MAX_INIT_ATTEMPTS = 10;
 
+        // Try to get quote ID from URL parameters
+        function getQuoteIdFromUrl() {
+            console.log('Checking URL parameters...');
+            const params = new URLSearchParams(window.location.search);
+            console.log('URL params:', Object.fromEntries(params));
+
+            // Zoho typically passes record ID through one of these parameters
+            const possibleParams = ['recordId', 'record_id', 'id', 'RecordID', 'recordID'];
+            for (let param of possibleParams) {
+                if (params.has(param)) {
+                    const value = params.get(param);
+                    console.log(`✓ Found ${param} in URL: ${value}`);
+                    return value;
+                }
+            }
+
+            // Also check window name which Zoho sometimes uses
+            if (window.name && window.name.includes('record')) {
+                console.log('✓ Found record ID in window.name:', window.name);
+                return window.name.split('_').pop();
+            }
+
+            console.log('No record ID found in URL parameters');
+            return null;
+        }
+
+        // Try to use postMessage to communicate with parent Zoho CRM frame
+        async function getDataFromZohoCRM() {
+            return new Promise((resolve, reject) => {
+                console.log('Attempting postMessage communication with parent Zoho CRM...');
+
+                const messageHandler = (event) => {
+                    console.log('Received postMessage:', event);
+                    if (event.data && event.data.recordId) {
+                        window.removeEventListener('message', messageHandler);
+                        resolve(event.data.recordId);
+                    }
+                };
+
+                window.addEventListener('message', messageHandler);
+
+                // Send message to parent
+                if (window.parent !== window) {
+                    window.parent.postMessage({ type: 'getRecordContext' }, '*');
+                }
+
+                // Timeout after 2 seconds
+                setTimeout(() => {
+                    window.removeEventListener('message', messageHandler);
+                    reject(new Error('postMessage timeout'));
+                }, 2000);
+            });
+        }
+
         // Get quote context from Zoho CRM Widget API
         async function initializeWidget() {
             try {
                 initAttempts++;
                 console.log(`\n=== Initialization attempt ${initAttempts}/${MAX_INIT_ATTEMPTS} ===`);
 
+                // FIRST: Try to get record ID from URL parameters
+                console.log('Step 1: Checking URL parameters...');
+                const urlRecordId = getQuoteIdFromUrl();
+                if (urlRecordId && initAttempts === 1) {
+                    console.log('✓ Found record ID in URL:', urlRecordId);
+                    quoteId = urlRecordId;
+                    // If we have a record ID, try to fetch data via ZOHO API or other means
+                }
+
                 // Debug: Check what's available
+                console.log('Step 2: Checking ZOHO object availability...');
                 console.log('typeof window.ZOHO:', typeof window.ZOHO);
                 console.log('ZOHO available:', typeof ZOHO !== 'undefined');
 
