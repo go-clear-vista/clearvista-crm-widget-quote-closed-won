@@ -67,6 +67,8 @@
             width: 100%;
             overflow: hidden;
             animation: slideIn 0.3s ease-out;
+            display: flex;
+            flex-direction: column;
         }
 
         @keyframes slideIn {
@@ -353,7 +355,7 @@
 
         function displayQuoteInfo() {
             // Handle multiple possible field name variations
-            const quoteNumber = quoteData.Quote_Number || quoteData.quote_number || quoteData.Quote_No || quoteData.quote_no || quoteId;
+            const quoteNumber = quoteData.CRM_Quote_Number || quoteData.Quote_Number || quoteData.quote_number || quoteData.Quote_No || quoteData.quote_no || quoteId;
             const subject = quoteData.Subject || quoteData.subject || quoteData.Description || quoteData.description || 'N/A';
             const stage = quoteData.Quote_Stage || quoteData.quote_stage || quoteData.Stage || quoteData.stage || 'Unknown';
 
