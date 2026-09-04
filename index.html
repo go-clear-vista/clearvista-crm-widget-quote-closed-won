@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Mark Quote as Closed Won</title>
+    <!-- Load Zoho Embedded App SDK for external widget authentication -->
+    <script src="https://live.zwidgets.com/js-sdk/1.5/ZohoEmbededAppSDK.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -262,199 +264,60 @@
         // Initialize widget
         let quoteId = null;
         let quoteData = null;
-        let initAttempts = 0;
-        const MAX_INIT_ATTEMPTS = 10;
 
-        // Try to get quote ID from URL parameters
-        function getQuoteIdFromUrl() {
-            console.log('Checking URL parameters...');
-            const params = new URLSearchParams(window.location.search);
-            console.log('URL params:', Object.fromEntries(params));
+        console.log('=== Widget Script Loaded ===');
+        console.log('Zoho EmbeddedApp SDK initialized');
 
-            // Zoho typically passes record ID through one of these parameters
-            const possibleParams = ['recordId', 'record_id', 'id', 'RecordID', 'recordID'];
-            for (let param of possibleParams) {
-                if (params.has(param)) {
-                    const value = params.get(param);
-                    console.log(`✓ Found ${param} in URL: ${value}`);
-                    return value;
-                }
-            }
-
-            // Also check window name which Zoho sometimes uses
-            if (window.name && window.name.includes('record')) {
-                console.log('✓ Found record ID in window.name:', window.name);
-                return window.name.split('_').pop();
-            }
-
-            console.log('No record ID found in URL parameters');
-            return null;
-        }
-
-        // Try to use postMessage to communicate with parent Zoho CRM frame
-        async function getDataFromZohoCRM() {
-            return new Promise((resolve, reject) => {
-                console.log('Attempting postMessage communication with parent Zoho CRM...');
-
-                const messageHandler = (event) => {
-                    console.log('Received postMessage:', event);
-                    if (event.data && event.data.recordId) {
-                        window.removeEventListener('message', messageHandler);
-                        resolve(event.data.recordId);
-                    }
-                };
-
-                window.addEventListener('message', messageHandler);
-
-                // Send message to parent
-                if (window.parent !== window) {
-                    window.parent.postMessage({ type: 'getRecordContext' }, '*');
-                }
-
-                // Timeout after 2 seconds
-                setTimeout(() => {
-                    window.removeEventListener('message', messageHandler);
-                    reject(new Error('postMessage timeout'));
-                }, 2000);
-            });
-        }
-
-        // Get quote context from Zoho CRM Widget API
-        async function initializeWidget() {
+        // Listen for PageLoad event from Zoho CRM - this provides the record ID
+        ZOHO.embeddedApp.on("PageLoad", async function(data) {
             try {
-                initAttempts++;
-                console.log(`\n=== Initialization attempt ${initAttempts}/${MAX_INIT_ATTEMPTS} ===`);
+                console.log('\n=== PageLoad Event Fired ===');
+                console.log('PageLoad data:', data);
 
-                // FIRST: Try to get record ID from URL parameters
-                console.log('Step 1: Checking URL parameters...');
-                const urlRecordId = getQuoteIdFromUrl();
-                if (urlRecordId && initAttempts === 1) {
-                    console.log('✓ Found record ID in URL:', urlRecordId);
-                    quoteId = urlRecordId;
-                    // If we have a record ID, try to fetch data via ZOHO API or other means
+                // Extract quote ID from the PageLoad event data
+                quoteId = Array.isArray(data.EntityId) ? data.EntityId[0] : data.EntityId;
+                console.log('✓ Quote ID from PageLoad:', quoteId);
+
+                if (!quoteId) {
+                    throw new Error('No EntityId in PageLoad data: ' + JSON.stringify(data));
                 }
 
-                // Debug: Check what's available
-                console.log('Step 2: Checking ZOHO object availability...');
-                console.log('typeof window.ZOHO:', typeof window.ZOHO);
-                console.log('ZOHO available:', typeof ZOHO !== 'undefined');
+                // Fetch the quote data using the ZOHO API
+                console.log('Fetching quote data for ID:', quoteId);
 
-                if (typeof ZOHO !== 'undefined') {
-                    console.log('ZOHO object keys:', Object.keys(ZOHO));
-                    console.log('ZOHO.CRM available:', ZOHO.CRM !== undefined);
-                    if (ZOHO.CRM) {
-                        console.log('ZOHO.CRM keys:', Object.keys(ZOHO.CRM));
-                        console.log('ZOHO.CRM.UI available:', ZOHO.CRM.UI !== undefined);
-                        console.log('ZOHO.CRM.API available:', ZOHO.CRM.API !== undefined);
-                    }
+                const response = await ZOHO.CRM.API.getRecord({
+                    Entity: "Quotes",
+                    RecordID: quoteId
+                });
+
+                console.log('✓ API Response received:', response);
+
+                if (!response || !response.data || !response.data[0]) {
+                    throw new Error('Invalid API response: ' + JSON.stringify(response));
                 }
 
-                // Wait for Zoho CRM widget SDK to load
-                if (typeof ZOHO !== 'undefined' && ZOHO.CRM && ZOHO.CRM.UI && ZOHO.CRM.API) {
-                    console.log('✓ Zoho CRM Widget SDK detected. Attempting to fetch record context...');
+                quoteData = response.data[0];
+                console.log('✓ Quote data extracted:', quoteData);
 
-                    try {
-                        // Get the current record context
-                        const context = await ZOHO.CRM.UI.Util.getRecordContext();
-                        console.log('Record context received:', context);
-
-                        if (!context || !context.record || !context.record[0]) {
-                            throw new Error('Invalid record context: ' + JSON.stringify(context));
-                        }
-
-                        quoteId = context.record[0];
-                        console.log('✓ Quote ID extracted:', quoteId);
-
-                        // Try to get quote data
-                        console.log('Attempting API call with Entity="Quotes", RecordID=' + quoteId);
-
-                        const response = await ZOHO.CRM.API.getRecord({
-                            Entity: "Quotes",
-                            RecordID: quoteId
-                        });
-
-                        console.log('✓ API Response received:', response);
-
-                        if (!response) {
-                            throw new Error('Empty API response');
-                        }
-
-                        // Handle different response formats
-                        let recordData = null;
-                        if (response.data && Array.isArray(response.data) && response.data[0]) {
-                            recordData = response.data[0];
-                            console.log('✓ Found record in response.data[0]');
-                        } else if (response.data && typeof response.data === 'object') {
-                            recordData = response.data;
-                            console.log('✓ Found record in response.data (object)');
-                        } else if (typeof response === 'object' && response.Quote_Stage) {
-                            recordData = response;
-                            console.log('✓ Response is directly the record');
-                        } else {
-                            console.log('Response structure:', JSON.stringify(response));
-                            throw new Error('Could not find record data in response: ' + JSON.stringify(response));
-                        }
-
-                        quoteData = recordData;
-                        console.log('✓ Quote data extracted:', quoteData);
-
-                        // Check field names
-                        console.log('Available fields in quote data:');
-                        for (let key in quoteData) {
-                            console.log(`  - ${key}: ${quoteData[key]}`);
-                        }
-
-                        displayQuoteInfo();
-                        showAppropriateMessage();
-                        console.log('✓ Initialization complete!');
-
-                    } catch (apiError) {
-                        console.error('API Error details:', apiError);
-                        console.log('Full error:', apiError.toString());
-                        throw apiError;
-                    }
-                } else {
-                    // Retry if SDK not yet loaded
-                    if (initAttempts < MAX_INIT_ATTEMPTS) {
-                        console.log('⏳ Zoho CRM Widget SDK not yet fully available. Retrying in 500ms...');
-                        setTimeout(initializeWidget, 500);
-                    } else {
-                        // Fallback for testing without Zoho context
-                        console.log('✗ Zoho CRM Widget SDK not available after retries. Using test mode.');
-                        console.log('Missing:', {
-                            ZOHO: typeof ZOHO === 'undefined',
-                            CRM: typeof ZOHO !== 'undefined' && !ZOHO.CRM,
-                            UI: typeof ZOHO !== 'undefined' && ZOHO.CRM && !ZOHO.CRM.UI,
-                            API: typeof ZOHO !== 'undefined' && ZOHO.CRM && !ZOHO.CRM.API
-                        });
-
-                        quoteId = 'TEST-12345';
-                        quoteData = {
-                            id: 'TEST-12345',
-                            Quote_Number: 'SQ-100587',
-                            Subject: 'Test Quote',
-                            Quote_Stage: 'Draft'
-                        };
-                        displayQuoteInfo();
-                        showAppropriateMessage();
-                        showError('Running in test mode - widget not loaded in Zoho CRM context. Quote data is sample data only.');
-                    }
+                // Log available fields for debugging
+                console.log('Available fields in quote data:');
+                for (let key in quoteData) {
+                    console.log(`  - ${key}: ${quoteData[key]}`);
                 }
+
+                displayQuoteInfo();
+                showAppropriateMessage();
+                console.log('✓ Widget initialization complete!');
+
             } catch (error) {
-                console.error('Error initializing widget:', error);
+                console.error('Error in PageLoad handler:', error);
                 console.error('Error stack:', error.stack);
-                if (initAttempts < MAX_INIT_ATTEMPTS) {
-                    console.log('⏳ Retrying after error in 500ms...');
-                    setTimeout(initializeWidget, 500);
-                } else {
-                    console.error('✗ Max retries reached. Showing error.');
-                    showError('Failed to load quote information. Error: ' + error.message + '. Check browser console for details.');
-                }
+                showError('Failed to load quote information. Error: ' + error.message);
             }
-        }
+        });
 
         function displayQuoteInfo() {
-            // Handle multiple possible field names
+            // Handle multiple possible field name variations
             const quoteNumber = quoteData.Quote_Number || quoteData.quote_number || quoteData.Quote_No || quoteData.quote_no || quoteId;
             const subject = quoteData.Subject || quoteData.subject || quoteData.Description || quoteData.description || 'N/A';
             const stage = quoteData.Quote_Stage || quoteData.quote_stage || quoteData.Stage || quoteData.stage || 'Unknown';
@@ -505,7 +368,6 @@
             try {
                 console.log('Accept button clicked. Quote ID:', quoteId);
 
-                // Update quote stage via Zoho CRM API
                 if (typeof ZOHO !== 'undefined' && ZOHO.CRM && ZOHO.CRM.API) {
                     console.log('✓ Zoho CRM API available. Attempting update...');
 
@@ -527,17 +389,18 @@
                         showSuccess('Quote successfully marked as Closed Won! A sales order has been created.');
                         setTimeout(() => {
                             // Close the widget
-                            if (typeof ZOHO !== 'undefined' && ZOHO.CRM && ZOHO.CRM.UI) {
+                            try {
                                 ZOHO.CRM.UI.Popup.closeReload();
+                            } catch(e) {
+                                console.log('Could not close popup with reload:', e);
+                                window.close();
                             }
                         }, 2000);
                     } else {
                         throw new Error(updateResponse.message || JSON.stringify(updateResponse));
                     }
                 } else {
-                    // Testing mode
-                    console.log('Zoho CRM API not available. Testing mode.');
-                    showSuccess('Quote successfully marked as Closed Won! (Test Mode)');
+                    throw new Error('Zoho CRM API not available');
                 }
             } catch (error) {
                 console.error('Error updating quote:', error);
@@ -550,10 +413,11 @@
 
         // Handle Cancel button
         document.getElementById('cancel-btn').addEventListener('click', () => {
-            if (typeof ZOHO !== 'undefined' && ZOHO.CRM && ZOHO.CRM.UI) {
+            try {
                 ZOHO.CRM.UI.Popup.close();
-            } else {
-                console.log('Widget closed (Test Mode)');
+            } catch(e) {
+                console.log('Could not close popup:', e);
+                window.close();
             }
         });
 
@@ -571,39 +435,9 @@
             document.getElementById('cancel-btn').textContent = 'Close';
         }
 
-        // Initialize on page load
-        console.log('=== Widget Script Loaded ===');
-        console.log('Current time:', new Date().toISOString());
-        console.log('Document ready state:', document.readyState);
-
-        // Try multiple initialization triggers
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', () => {
-                console.log('DOM Content Loaded event fired');
-                initializeWidget();
-            });
-        } else {
-            console.log('DOM already loaded, initializing immediately');
-            initializeWidget();
-        }
-
-        // Also listen to window load event
-        window.addEventListener('load', () => {
-            console.log('Window load event fired');
-            // If not initialized yet after window load, try again
-            if (!quoteData) {
-                console.log('Still no quote data, attempting reinitialize after window load');
-                initializeWidget();
-            }
-        });
-
-        // Fallback: try initialization after a short delay
-        setTimeout(() => {
-            console.log('Fallback initialization attempt after 1 second');
-            if (!quoteData) {
-                initializeWidget();
-            }
-        }, 1000);
+        // Initialize the Zoho Embedded App SDK
+        console.log('Calling ZOHO.embeddedApp.init()');
+        ZOHO.embeddedApp.init();
     </script>
 </body>
 </html>
