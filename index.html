@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mark Quote as Closed Won</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 999;
+        }
+
+        .modal-overlay.active {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-container {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 500px;
+            width: 100%;
+            padding: 40px;
+            animation: slideIn 0.3s ease-out;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .modal-header {
+            margin-bottom: 20px;
+        }
+
+        .modal-title {
+            font-size: 24px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 8px;
+        }
+
+        .modal-subtitle {
+            font-size: 14px;
+            color: #666;
+        }
+
+        .warning-banner {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 12px;
+            margin: 20px 0;
+            border-radius: 4px;
+            font-size: 14px;
+            color: #856404;
+        }
+
+        .stage-info {
+            background: #f8f9fa;
+            padding: 16px;
+            border-radius: 4px;
+            margin: 20px 0;
+            font-size: 14px;
+        }
+
+        .stage-info-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+        }
+
+        .stage-info-row:last-child {
+            margin-bottom: 0;
+        }
+
+        .stage-label {
+            font-weight: 500;
+            color: #333;
+        }
+
+        .stage-value {
+            color: #666;
+        }
+
+        .message-text {
+            font-size: 16px;
+            color: #333;
+            line-height: 1.6;
+            margin: 20px 0;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 12px;
+            margin-top: 30px;
+        }
+
+        .btn {
+            flex: 1;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 4px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .btn-primary {
+            background: #4CAF50;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #45a049;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(76, 175, 80, 0.3);
+        }
+
+        .btn-primary:active {
+            transform: translateY(0);
+        }
+
+        .btn-secondary {
+            background: #f0f0f0;
+            color: #333;
+        }
+
+        .btn-secondary:hover {
+            background: #e0e0e0;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+
+        .btn-secondary:active {
+            transform: translateY(0);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #4CAF50;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin-right: 8px;
+            vertical-align: middle;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .error-message {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 12px;
+            border-radius: 4px;
+            margin: 20px 0;
+            border: 1px solid #f5c6cb;
+        }
+
+        .success-message {
+            background: #d4edda;
+            color: #155724;
+            padding: 12px;
+            border-radius: 4px;
+            margin: 20px 0;
+            border: 1px solid #c3e6cb;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .draft-sent-warning {
+            background: #ffe6e6;
+            border-left: 4px solid #d32f2f;
+            color: #b71c1c;
+        }
+    </style>
+</head>
+<body>
+    <div class="modal-overlay active">
+        <div class="modal-container">
+            <div class="modal-header">
+                <div class="modal-title">Mark Quote as Closed Won</div>
+                <div class="modal-subtitle" id="subtitle">Please confirm this action</div>
+            </div>
+
+            <div id="stage-info" class="stage-info">
+                <div class="stage-info-row">
+                    <span class="stage-label">Quote ID:</span>
+                    <span class="stage-value" id="quote-id">Loading...</span>
+                </div>
+                <div class="stage-info-row">
+                    <span class="stage-label">Quote Subject:</span>
+                    <span class="stage-value" id="quote-subject">Loading...</span>
+                </div>
+                <div class="stage-info-row">
+                    <span class="stage-label">Current Stage:</span>
+                    <span class="stage-value" id="current-stage">Loading...</span>
+                </div>
+            </div>
+
+            <div id="warning-draft-sent" class="warning-banner draft-sent-warning hidden">
+                ⚠️ <strong>WARNING:</strong> This will bypass Quote Ready and On Hold stages
+            </div>
+
+            <div id="message-text" class="message-text"></div>
+
+            <div id="error-message" class="error-message hidden"></div>
+            <div id="success-message" class="success-message hidden"></div>
+
+            <div class="button-group">
+                <button id="cancel-btn" class="btn btn-secondary">Cancel</button>
+                <button id="accept-btn" class="btn btn-primary">
+                    <span id="accept-btn-text">Accept, Proceed</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Initialize widget
+        let quoteId = null;
+        let quoteData = null;
+
+        // Get quote context from Zoho CRM Widget API
+        async function initializeWidget() {
+            try {
+                // Wait for Zoho CRM widget SDK to load
+                if (typeof ZOHO !== 'undefined' && ZOHO.CRM && ZOHO.CRM.UI) {
+                    // Get the current record context
+                    const context = await ZOHO.CRM.UI.Util.getRecordContext();
+                    quoteId = context.record[0];
+
+                    // Get quote data
+                    const response = await ZOHO.CRM.API.getRecord({
+                        Entity: "Quotes",
+                        RecordID: quoteId
+                    });
+
+                    quoteData = response.data[0];
+                    displayQuoteInfo();
+                    showAppropriateMessage();
+                } else {
+                    // Fallback for testing without Zoho context
+                    console.log('Zoho CRM Widget SDK not available. Testing mode.');
+                    quoteId = 'TEST-12345';
+                    quoteData = {
+                        id: 'TEST-12345',
+                        Quote_Number: 'SQ-100587',
+                        Subject: 'Test Quote',
+                        Quote_Stage: 'Draft'
+                    };
+                    displayQuoteInfo();
+                    showAppropriateMessage();
+                }
+            } catch (error) {
+                console.error('Error initializing widget:', error);
+                showError('Failed to load quote information. Please try again.');
+            }
+        }
+
+        function displayQuoteInfo() {
+            document.getElementById('quote-id').textContent = quoteData.Quote_Number || quoteId;
+            document.getElementById('quote-subject').textContent = quoteData.Subject || 'N/A';
+            document.getElementById('current-stage').textContent = quoteData.Quote_Stage || 'Unknown';
+        }
+
+        function showAppropriateMessage() {
+            const stage = quoteData.Quote_Stage;
+            const messageEl = document.getElementById('message-text');
+            const warningEl = document.getElementById('warning-draft-sent');
+
+            if (stage === 'Draft' || stage === 'Sent') {
+                warningEl.classList.remove('hidden');
+                messageEl.innerHTML = `
+                    <strong>This will mark the quote as won and create a sales order.</strong><br><br>
+                    The quote will bypass the Quote Ready and On Hold stages and move directly to Closed Won status.
+                `;
+            } else if (stage === 'On Hold' || stage === 'Quote Ready') {
+                warningEl.classList.add('hidden');
+                messageEl.innerHTML = `
+                    <strong>This will mark the quote as won and create a sales order.</strong><br><br>
+                    The quote will transition from <strong>${stage}</strong> to <strong>Closed Won</strong> status.
+                `;
+            } else {
+                warningEl.classList.add('hidden');
+                messageEl.innerHTML = `
+                    <strong>This will mark the quote as won and create a sales order.</strong><br><br>
+                    The quote will transition to <strong>Closed Won</strong> status.
+                `;
+            }
+        }
+
+        // Handle Accept button
+        document.getElementById('accept-btn').addEventListener('click', async () => {
+            const acceptBtn = document.getElementById('accept-btn');
+            const acceptBtnText = document.getElementById('accept-btn-text');
+
+            acceptBtn.disabled = true;
+            acceptBtnText.innerHTML = '<span class="loading"></span>Processing...';
+
+            try {
+                // Update quote stage via Zoho CRM API
+                if (typeof ZOHO !== 'undefined' && ZOHO.CRM && ZOHO.CRM.API) {
+                    const updateResponse = await ZOHO.CRM.API.updateRecord({
+                        Entity: "Quotes",
+                        RecordID: quoteId,
+                        APIData: {
+                            Quote_Stage: "Closed Won"
+                        }
+                    });
+
+                    if (updateResponse.code === 0) {
+                        showSuccess('Quote successfully marked as Closed Won! A sales order has been created.');
+                        setTimeout(() => {
+                            // Close the widget
+                            if (typeof ZOHO !== 'undefined' && ZOHO.CRM && ZOHO.CRM.UI) {
+                                ZOHO.CRM.UI.Popup.closeReload();
+                            }
+                        }, 2000);
+                    } else {
+                        throw new Error(updateResponse.message);
+                    }
+                } else {
+                    // Testing mode
+                    showSuccess('Quote successfully marked as Closed Won! (Test Mode)');
+                }
+            } catch (error) {
+                console.error('Error updating quote:', error);
+                showError(`Failed to update quote: ${error.message}`);
+                acceptBtn.disabled = false;
+                acceptBtnText.innerHTML = 'Accept, Proceed';
+            }
+        });
+
+        // Handle Cancel button
+        document.getElementById('cancel-btn').addEventListener('click', () => {
+            if (typeof ZOHO !== 'undefined' && ZOHO.CRM && ZOHO.CRM.UI) {
+                ZOHO.CRM.UI.Popup.close();
+            } else {
+                console.log('Widget closed (Test Mode)');
+            }
+        });
+
+        function showError(message) {
+            const errorEl = document.getElementById('error-message');
+            errorEl.textContent = message;
+            errorEl.classList.remove('hidden');
+        }
+
+        function showSuccess(message) {
+            const successEl = document.getElementById('success-message');
+            successEl.textContent = message;
+            successEl.classList.remove('hidden');
+            document.getElementById('accept-btn').style.display = 'none';
+            document.getElementById('cancel-btn').textContent = 'Close';
+        }
+
+        // Initialize on page load
+        window.addEventListener('load', initializeWidget);
+    </script>
+</body>
+</html>
